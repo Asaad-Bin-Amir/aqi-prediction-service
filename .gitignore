@@ -1,35 +1,201 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+
+# C extensions
 *.so
+
+# Distribution / packaging
 .Python
-venv/
-env/
-ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+PIPFILE. lock
 
-# Jupyter
+# PyInstaller
+*. manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory. txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*. cover
+*.py,cover
+. hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*. mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+. webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+. pybuilder/
+target/
+
+# Jupyter Notebook
 .ipynb_checkpoints
-*. ipynb_checkpoints
 
-# Environment variables
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+. python-version
+
+# pipenv
+Pipfile.lock
+
+# poetry
+poetry.lock
+
+# pdm
+. pdm.toml
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat. pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
 .env
 .env.local
+.env.*. local
+. venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
-# Models
-*. pkl
-*.h5
-*.pth
+# Spyder project settings
+.spyderproject
+.spyproject
 
-# IDE
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+. dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+. pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# IDEs
 .vscode/
-.idea/
+. idea/
+*. swp
+*.swo
+*~
+. project
+.pydevproject
+. settings/
+*. sublime-project
+*.sublime-workspace
 
-# OS
+# Operating System Files
 .DS_Store
+. DS_Store? 
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
-# Data
-data/
-*. csv
-*.parquet
+# Project Specific
+# Data files (can be large)
+data/*.csv
+data/*.json
+data/*. parquet
+data/*.pkl
+
+# Model files (can be large, regenerated from training)
+models/*.pkl
+models/*. h5
+models/*.joblib
+models/*.keras
+models/*.pt
+models/*.pth
+models/*. onnx
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*. tmp
+*.temp
+temp/
+tmp/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets and credentials (CRITICAL - never commit these!)
+.env
+.env.local
+. env.production
+. env.staging
+secrets. yml
+credentials.json
+*. pem
+*.key
