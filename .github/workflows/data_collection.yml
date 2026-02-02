@@ -25,10 +25,11 @@ jobs:
       
       - name: 🔄 Collect AQI Data
         env:
+          AQICN_API_TOKEN: ${{ secrets.AQICN_API_TOKEN }}
           OPENWEATHERMAP_API_KEY: ${{ secrets.OPENWEATHERMAP_API_KEY }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: |
-          echo "Starting hourly data collection..."
+          echo "Starting hourly hybrid data collection..."
           python src/data_collection.py
           echo "Data collection complete!"
       
