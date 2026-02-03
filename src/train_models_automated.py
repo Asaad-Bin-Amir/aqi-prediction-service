@@ -11,6 +11,7 @@ import pandas as pd
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent))
 
+from model_registry import ModelRegistry
 from feature_store import AQIFeatureStore
 from training_pipeline import AQIForecastPipeline
 
@@ -119,6 +120,51 @@ def save_training_metadata(best_models, results, data_info):
     
     return metadata_file
 
+def register_models_to_registry(best_models, results, model_version):
+    """Register trained models to Model Registry"""
+    print("\n📦 Registering models to Model Registry...")
+    
+    with ModelRegistry() as registry:
+        for horizon, model_name in best_models.items():
+            model_key = f'{model_name}_{horizon}'
+            
+            # Model file path
+            model_path = f'models/aqi_forecast_{horizon}_{model_version}.pkl'
+            
+            # Metrics
+            metrics = {
+                'mae': float(results[model_key]['mae']),
+                'rmse': float(results[model_key]['rmse']),
+                'r2': float(results[model_key]['r2'])
+            }
+            
+            # Metadata
+            metadata = {
+                'algorithm': model_name,
+                'horizon': horizon,
+                'version': model_version,
+                'training_date': datetime.now().isoformat()
+            }
+            
+            # Register
+            registry.register_model(
+                model_name=f'aqi_forecast_{horizon}',
+                version=model_version,
+                model_path=model_path,
+                metrics=metrics,
+                metadata=metadata,
+                stage='staging'  # Start in staging
+            )
+            
+            # Auto-promote to production if MAE < 20
+            if metrics['mae'] < 20:
+                print(f"   🏆 Auto-promoting {horizon} (MAE: {metrics['mae']:.2f} < 20)")
+                registry.promote_to_production(
+                    model_name=f'aqi_forecast_{horizon}',
+                    version=model_version
+                )
+    
+    print("✅ Models registered to Model Registry")
 
 def main():
     """Main execution"""
@@ -167,6 +213,7 @@ def main():
         
         print(f"\n💾 Models saved to: models/")
         print(f"📜 History: models/training_history.json")
+        register_models_to_registry(best_models, results, MODEL_VERSION)
         
         return 0
     
