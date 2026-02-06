@@ -30,7 +30,7 @@ jobs:
           OPENWEATHERMAP_API_KEY: ${{ secrets.OPENWEATHERMAP_API_KEY }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: |
-          python src/data_collection.py
+          python -m src.data_collection
       
       - name: Verify data collection
         run: |

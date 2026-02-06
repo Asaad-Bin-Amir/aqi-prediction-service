@@ -6,7 +6,8 @@ import requests
 import os
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from feature_store import AQIFeatureStore
+
+from src.feature_store import AQIFeatureStore  # ← CHANGED THIS LINE
 
 load_dotenv()
 

@@ -3,8 +3,8 @@ Automated Model Training
 Runs on schedule to retrain models with latest data
 """
 from datetime import datetime
-from training_pipeline import train_all_horizons
-from feature_store import AQIFeatureStore
+from src.training_pipeline import train_all_horizons
+from src.feature_store import AQIFeatureStore
 
 
 def check_data_quality():

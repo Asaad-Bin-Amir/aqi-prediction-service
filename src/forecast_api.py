@@ -11,8 +11,8 @@ import pandas as pd
 import joblib
 import os
 
-from feature_store import AQIFeatureStore
-from feature_engineering import engineer_all_features
+from src.feature_store import AQIFeatureStore
+from src.feature_engineering import engineer_all_features
 
 app = FastAPI(
     title="AQI Prediction API",

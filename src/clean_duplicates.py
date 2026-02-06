@@ -8,7 +8,7 @@ from pathlib import Path
 # Add src to path
 sys.path.append(str(Path(__file__).parent))
 
-from feature_store import AQIFeatureStore
+from src.feature_store import AQIFeatureStore
 from datetime import datetime
 
 def clean_duplicates():

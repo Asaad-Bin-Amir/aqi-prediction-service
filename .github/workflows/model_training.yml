@@ -43,7 +43,7 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: |
-          python src/train_models_automated.py
+          python -m src.train_models_automated
       
       - name: Upload model artifacts
         uses: actions/upload-artifact@v3
