@@ -1,70 +1,61 @@
-name: Weekly Model Retraining
+name: Weekly Model Training
 
 on:
-  # Run every Sunday at 2 AM UTC
   schedule:
+    # Run every Sunday at 2 AM UTC
     - cron: '0 2 * * 0'
   
-  # Allow manual trigger for testing
-  workflow_dispatch:
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
   train-models:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: 🐍 Set up Python 3.11
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
       
-      - name: 📦 Install dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: 🤖 Train Models
+      - name: Check data availability
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: |
-          echo "Starting automated model training..."
-          echo "Date: $(date)"
-          python src/train_models_automated.py
-          echo "Training complete!"
+          python -c "
+          from src.feature_store import AQIFeatureStore
+          with AQIFeatureStore() as fs:
+              count = fs.raw_features.count_documents({})
+              print(f'📊 Available records: {count}')
+              if count < 100:
+                  print('⚠️ Insufficient data for training')
+                  exit(1)
+          "
       
-      - name: 📊 Display Training Summary
-        if: always()
+      - name: Train models
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: |
-          if [ -f models/training_history.json ]; then
-            echo "📜 Latest training run:"
-            python -c "import json; h=json.load(open('models/training_history.json')); print(json.dumps(h[-1], indent=2))"
-          else
-            echo "⚠️ No training history found (training may have been skipped)"
-          fi
+          python src/train_models_automated.py
       
-      - name: 💾 Commit New Models
-        if: success()
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: trained-models
+          path: models/
+          retention-days: 90
+      
+      - name: Commit and push models
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add models/*.pkl models/*.json 2>/dev/null || true
-          git add models/all_models/*.pkl 2>/dev/null || true
-          if git diff --staged --quiet; then
-            echo "No new models to commit (training may have been skipped)"
-          else
-            git commit -m "🤖 Auto-retrain models - $(date +'%Y-%m-%d %H:%M UTC')"
-            echo "NEW_MODELS=true" >> $GITHUB_ENV
-          fi
-      
-      - name: 📤 Push Changes
-        if: env.NEW_MODELS == 'true'
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.ref }}
+          git add models/
+          git diff --quiet && git diff --staged --quiet || git commit -m "🤖 Auto-trained models - $(date +'%Y-%m-%d')"
+          git push
