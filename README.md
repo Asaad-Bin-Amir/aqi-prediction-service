@@ -21,11 +21,10 @@ Real-time Air Quality Index forecasting system for Karachi, Pakistan using Machi
 - [Project Structure](#project-structure)
 - [Deployment](#deployment)
 - [Contributing](#contributing)
-- [License](#license)
 
 ---
 
-## 🎯 Overview
+## Overview
 
 This project provides **24h, 48h, and 72h AQI forecasts** using real-time air quality and weather data.
 
@@ -75,7 +74,7 @@ This project provides **24h, 48h, and 72h AQI forecasts** using real-time air qu
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────┐
@@ -111,7 +110,7 @@ This project provides **24h, 48h, and 72h AQI forecasts** using real-time air qu
 
 ---
 
-## 📊 Data Source
+## Data Source
 
 ### OpenWeather API (Single Source Solution)
 
@@ -150,7 +149,7 @@ This project provides **24h, 48h, and 72h AQI forecasts** using real-time air qu
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ### Prerequisites
 
@@ -277,7 +276,7 @@ API docs: `http://localhost:8000/docs`
 
 ---
 
-## 📈 Model Performance
+## Model Performance
 
 ### Expected Metrics (after 2 weeks of data collection)
 
@@ -300,7 +299,7 @@ API docs: `http://localhost:8000/docs`
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 aqi-prediction-service/
@@ -330,7 +329,7 @@ aqi-prediction-service/
 
 ---
 
-## 🌐 Deployment
+## Deployment
 
 ### GitHub Actions (Automated)
 
@@ -362,7 +361,7 @@ aqi-prediction-service/
 
 ---
 
-## 🔬 Technical Highlights
+## Technical Highlights
 
 ### Data Quality Measures
 
@@ -395,7 +394,7 @@ aqi-prediction-service/
 
 ---
 
-## 🐛 Challenges & Solutions
+## Challenges & Solutions
 
 ### Challenge 1: AQICN Station Outages
 
