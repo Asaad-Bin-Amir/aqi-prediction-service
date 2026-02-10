@@ -423,7 +423,7 @@ aqi-prediction-service/
 
 ---
 
-## 📚 References
+## References
 
 - OpenWeather API: https://openweathermap.org/api/air-pollution
 - European AQI: https://www.eea.europa.eu/themes/air/air-quality-index
@@ -431,24 +431,18 @@ aqi-prediction-service/
 
 ---
 
-## 👤 Author
+## Author
 
-**Your Name**
+Asaad Bin Amir
 
-- University: [Your University]
-- Program: [Your Program]
-- Email: [Your Email]
-- GitHub: [@yourusername](https://github.com/yourusername)
-
----
-
-## 📄 License
-
-MIT License - see LICENSE file for details
+- University: Bahria University Karachi
+- Program: BS Computer Science
+- Email: asaadbinamir151@gmail.com
+- GitHub: [@Asaad-Bin-Amir](https://github.com/Asaad-Bin-Amir)
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - OpenWeather for free API access
 - MongoDB Atlas for cloud database
@@ -457,4 +451,4 @@ MIT License - see LICENSE file for details
 
 ---
 
-**Last Updated:** February 6, 2026
+**Last Updated:** February 10, 2026
