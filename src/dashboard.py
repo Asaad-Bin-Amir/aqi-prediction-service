@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 import joblib
 import os
 
-from src.feature_store import AQIFeatureStore
-from src.feature_engineering import engineer_all_features
+from feature_store import AQIFeatureStore
+from feature_engineering import engineer_all_features
 
 
 # Page config
