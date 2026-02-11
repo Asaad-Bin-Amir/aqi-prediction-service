@@ -2,6 +2,9 @@
 Data Collection Pipeline - OpenWeather Only
 Complete air quality and weather data from single free API
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 import requests
 import os
 from datetime import datetime, timezone
@@ -89,9 +92,9 @@ def get_openweather_data():
 def collect_and_store():
     """Collect data and store in MongoDB"""
     print("\n" + "="*70)
-    print("🌍 AQI DATA COLLECTION PIPELINE")
-    print(f"📍 Location: {CITY}, Pakistan")
-    print(f"📡 Source: OpenWeather (Free Tier)")
+    print(" AQI DATA COLLECTION PIPELINE")
+    print(f" Location: {CITY}, Pakistan")
+    print(f" Source: OpenWeather (Free Tier)")
     print("="*70)
     
     with AQIFeatureStore() as fs:
@@ -102,7 +105,7 @@ def collect_and_store():
         data = get_openweather_data()
         
         if not data:
-            print("\n❌ Data collection failed!")
+            print("\n Data collection failed!")
             return
         
         # Check for duplicates
@@ -111,7 +114,7 @@ def collect_and_store():
             pm25_same = abs(latest.get('pm2_5', 0) - data['pm2_5']) < 0.5
             
             if aqi_same and pm25_same:
-                print("\n⏭️ SKIPPING - Data unchanged")
+                print("\n SKIPPING - Data unchanged")
                 print("   (OpenWeather caches data, this is normal)")
                 return
         
