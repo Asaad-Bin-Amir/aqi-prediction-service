@@ -161,6 +161,84 @@ def main():
     st.title("🌍 AQI Prediction Service")
     st.caption("Real-time Air Quality Index forecasting powered by Machine Learning")
     
+    # ========== SIDEBAR - AQI SCALE REFERENCE ==========
+    with st.sidebar:
+        st.title("📊 Information")
+        
+        with st.expander("ℹ️ AQI Scale Reference", expanded=False):
+            st.markdown("### 📊 AQI Scale Comparison")
+            st.markdown("*Understanding air quality indices*")
+            
+            # Two-column layout for scale comparison
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**OpenWeather CAQI**")
+                st.markdown("*(1-5 scale)*")
+                st.markdown("*Used in this project*")
+                
+                # Visual gradient
+                st.markdown("""
+                <div style='background: linear-gradient(to bottom, #00e400, #ffff00, #ff7e00, #ff0000, #8f3f97); 
+                            padding: 15px; border-radius: 8px; text-align: center; color: white; font-weight: bold;
+                            margin-bottom: 10px;'>
+                    1<br>↓<br>2<br>↓<br>3<br>↓<br>4<br>↓<br>5
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("""
+                - **1** - Good ✅
+                - **2** - Fair ⚪
+                - **3** - Moderate 🟡
+                - **4** - Poor 🟠
+                - **5** - Very Poor 🔴
+                """)
+            
+            with col2:
+                st.markdown("**US EPA AQI**")
+                st.markdown("*(0-500 scale)*")
+                st.markdown("*Traditional standard*")
+                
+                # Visual gradient
+                st.markdown("""
+                <div style='background: linear-gradient(to bottom, #00e400, #ffff00, #ff7e00, #ff0000, #8f3f97, #7e0023); 
+                            padding: 15px; border-radius: 8px; text-align: center; color: white; font-weight: bold;
+                            margin-bottom: 10px; font-size: 12px;'>
+                    0-50<br>↓<br>51-100<br>↓<br>101-150<br>↓<br>151-200<br>↓<br>201-300<br>↓<br>301-500
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("""
+                - **0-50** - Good ✅
+                - **51-100** - Moderate ⚪
+                - **101-150** - Unhealthy (Sensitive) 🟡
+                - **151-200** - Unhealthy 🟠
+                - **201-300** - Very Unhealthy 🔴
+                - **301-500** - Hazardous ☠️
+                """)
+            
+            st.divider()
+            
+            # Detailed comparison table
+            st.markdown("**Conversion Reference**")
+            
+            scale_comparison = pd.DataFrame({
+                'CAQI': ['1', '2', '3', '4', '5'],
+                'EPA': ['0-50', '51-100', '101-150', '151-200', '201-300+'],
+                'PM2.5 (µg/m³)': ['0-12', '12-35', '35-55', '55-150', '150+'],
+                'Category': ['Good', 'Fair', 'Moderate', 'Poor', 'Very Poor']
+            })
+            
+            st.dataframe(
+                scale_comparison,
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            st.caption("📌 This project uses OpenWeather CAQI (1-5), aligned with European/WHO standards")
+    
+    # ========== MAIN CONTENT ==========
+    
     # Load data
     current = load_latest_data()
     models = load_models()
