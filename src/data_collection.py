@@ -10,7 +10,7 @@ import os
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
-from src.feature_store import AQIFeatureStore  # ← CHANGED THIS LINE
+from src.feature_store import AQIFeatureStore
 
 load_dotenv()
 
@@ -105,18 +105,40 @@ def collect_and_store():
         data = get_openweather_data()
         
         if not data:
-            print("\n Data collection failed!")
+            print("\n❌ Data collection failed!")
             return
         
-        # Check for duplicates
+        # ========== IMPROVED DUPLICATE DETECTION ========== 
         if latest:
-            aqi_same = latest.get('aqi', 0) == data['aqi']
-            pm25_same = abs(latest.get('pm2_5', 0) - data['pm2_5']) < 0.5
+            # Make both timestamps timezone-aware for comparison
+            latest_ts = latest['timestamp']
+            current_ts = data['timestamp']
             
-            if aqi_same and pm25_same:
-                print("\n SKIPPING - Data unchanged")
-                print("   (OpenWeather caches data, this is normal)")
-                return
+            # If latest is naive, make it UTC-aware
+            if latest_ts.tzinfo is None:
+                latest_ts = latest_ts.replace(tzinfo=timezone.utc)
+            
+            # Calculate time difference
+            time_diff = (current_ts - latest_ts).total_seconds() / 60
+            
+            # ALWAYS store if more than 45 minutes old
+            if time_diff >= 45:
+                print(f"\n✅ Storing data ({time_diff:.0f} min since last collection)")
+            else:
+                # Check if data actually changed
+                aqi_same = latest.get('aqi', 0) == data['aqi']
+                pm25_same = abs(latest.get('pm2_5', 0) - data['pm2_5']) < 0.5
+                temp_same = abs(latest.get('temperature', 0) - data['temperature']) < 0.5
+                
+                # Only skip if ALL are identical AND less than 45 min
+                if aqi_same and pm25_same and temp_same:
+                    print(f"\n⏭️ SKIPPING - Data unchanged ({time_diff:.0f} min ago)")
+                    print("   (OpenWeather API caching - normal behavior)")
+                    return
+                else:
+                    print(f"\n✅ Storing data - values changed (gap: {time_diff:.0f} min)")
+        else:
+            print("\n✅ Storing first record")
         
         # Save to MongoDB
         result = fs.raw_features.insert_one(data)
