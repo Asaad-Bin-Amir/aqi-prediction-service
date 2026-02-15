@@ -3,3 +3,4 @@ pymongo==4.16.0
 python-dotenv==1.2.1
 requests==2.32.5
 numpy==1.26.4
+certifi==2026.1.4

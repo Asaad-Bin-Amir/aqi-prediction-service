@@ -199,3 +199,6 @@ secrets. yml
 credentials.json
 *. pem
 *.key
+# Old models (deprecated - retrained from MongoDB)
+models_old/
+*_old.pkl
