@@ -2,8 +2,7 @@ name: Daily Model Training
 
 on:
   schedule:
-    # Run daily at 2:00 AM UTC (was weekly)
-    - cron: '0 2 * * *'
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
   
   workflow_dispatch:
 
@@ -12,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
       
       - name: Set up Python
@@ -31,9 +30,7 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           OPENWEATHERMAP_API_KEY: ${{ secrets.OPENWEATHERMAP_API_KEY }}
         run: |
-          echo "🚀 Starting model training..."
-          python src/train_models_automated.py
-          echo "✅ Training complete"
+          python src/train_adaptive.py
       
       - name: Upload models
         uses: actions/upload-artifact@v4
