@@ -13,12 +13,13 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # Updated from v3
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5  # Updated from v4
         with:
           python-version: '3.11'
+          cache: 'pip'  # Added caching for faster runs
       
       - name: Install dependencies
         run: |
@@ -30,7 +31,9 @@ jobs:
           OPENWEATHERMAP_API_KEY: ${{ secrets.OPENWEATHERMAP_API_KEY }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: |
+          echo "📊 Starting data collection..."
           python -m src.data_collection
+          echo "✅ Data collection successful!"
       
       - name: Verify data collection
         run: |
