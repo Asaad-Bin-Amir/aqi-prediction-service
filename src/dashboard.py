@@ -169,26 +169,34 @@ def load_models():
                 model_name = f'aqi_forecast_{horizon}'
                 
                 # Try production first
-                model, metadata = registry.get_production_model(model_name)
+                try:
+                    model, metadata = registry.get_production_model(model_name)
+                    
+                    # If production not found, try any staging model
+                    if model is None or metadata is None:
+                        model, metadata = registry.load_model(model_name)
+                    
+                    if model is not None and metadata is not None:
+                        models[horizon] = {
+                            'model': model,
+                            'metadata': metadata
+                        }
+                        stage = metadata.get('stage', 'unknown')
+                        print(f"✅ Loaded {horizon} from MongoDB ({stage})")
+                    else:
+                        print(f"⚠️ No model found in MongoDB for {horizon}")
                 
-                # Fallback to latest staging
-                if not model:
-                    model, metadata = registry.load_model(model_name)
-                
-                if model and metadata:
-                    models[horizon] = {
-                        'model': model,
-                        'metadata': metadata
-                    }
-                    stage = metadata.get('stage', 'unknown')
-                    print(f"✅ Loaded {horizon} from MongoDB ({stage})")
+                except Exception as model_err:
+                    print(f"⚠️ Error loading {horizon}: {model_err}")
+                    continue
     
     except Exception as e:
-        st.error(f"⚠️ Failed to load from MongoDB: {str(e)}")
-        print(f"Error loading models: {e}")
+        st.warning(f"⚠️ MongoDB connection failed: {str(e)}")
+        print(f"Error connecting to MongoDB: {e}")
         
         # Fallback to local files (for local development)
         try:
+            print("Trying local files as fallback...")
             for horizon in ['24h', '48h', '72h']:
                 model_path = f'models/aqi_model_{horizon}.joblib'
                 metadata_path = f'models/aqi_model_{horizon}_metadata.joblib'
@@ -201,6 +209,9 @@ def load_models():
                     print(f"✅ Loaded {horizon} from local file")
         except Exception as local_err:
             print(f"Local fallback also failed: {local_err}")
+    
+    if not models:
+        st.error("❌ No models found in MongoDB or local files. Please train models first.")
     
     return models
 
