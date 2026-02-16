@@ -157,18 +157,43 @@ def load_historical_data(days=7):
 
 
 def load_models():
-    """Load trained forecast models"""
+    """Load trained forecast models from MongoDB"""
     models = {}
     
-    for horizon in ['24h', '48h', '72h']:
-        model_path = f'models/aqi_model_{horizon}.joblib'
-        metadata_path = f'models/aqi_model_{horizon}_metadata.joblib'
+    try:
+        from model_registry import ModelRegistry
         
-        if os.path.exists(model_path) and os.path.exists(metadata_path):
-            models[horizon] = {
-                'model': joblib.load(model_path),
-                'metadata': joblib.load(metadata_path)
-            }
+        with ModelRegistry() as registry:
+            for horizon in ['24h', '48h', '72h']:
+                # Try to load production model
+                model, metadata = registry.get_production_model(f'aqi_forecast_{horizon}')
+                
+                # Fallback to latest staging model
+                if not model:
+                    model, metadata = registry.load_model(f'aqi_forecast_{horizon}')
+                
+                if model and metadata:
+                    models[horizon] = {
+                        'model': model,
+                        'metadata': metadata
+                    }
+                    print(f"✅ Loaded {horizon} from MongoDB (stage: {metadata['stage']})")
+    
+    except Exception as e:
+        print(f"⚠️ Failed to load from MongoDB: {e}")
+        print(f"   Trying local files...")
+        
+        # Fallback to local files
+        for horizon in ['24h', '48h', '72h']:
+            model_path = f'models/aqi_model_{horizon}.joblib'
+            metadata_path = f'models/aqi_model_{horizon}_metadata.joblib'
+            
+            if os.path.exists(model_path) and os.path.exists(metadata_path):
+                models[horizon] = {
+                    'model': joblib.load(model_path),
+                    'metadata': joblib.load(metadata_path)
+                }
+                print(f"✅ Loaded {horizon} from local file")
     
     return models
 
