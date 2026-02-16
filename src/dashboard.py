@@ -162,18 +162,22 @@ def load_historical_data(days=7):
 def load_models():
     """Load trained forecast models from MongoDB GridFS"""
     models = {}
+    errors = []
     
     try:
         with ModelRegistry() as registry:
             for horizon in ['24h', '48h', '72h']:
                 model_name = f'aqi_forecast_{horizon}'
                 
-                # Try production first
                 try:
+                    print(f"Attempting to load {model_name}...")
+                    
+                    # Try production first
                     model, metadata = registry.get_production_model(model_name)
                     
                     # If production not found, try any staging model
                     if model is None or metadata is None:
+                        print(f"  No production model, trying staging...")
                         model, metadata = registry.load_model(model_name)
                     
                     if model is not None and metadata is not None:
@@ -184,15 +188,23 @@ def load_models():
                         stage = metadata.get('stage', 'unknown')
                         print(f"✅ Loaded {horizon} from MongoDB ({stage})")
                     else:
-                        print(f"⚠️ No model found in MongoDB for {horizon}")
+                        error_msg = f"⚠️ No model found for {horizon}"
+                        print(error_msg)
+                        errors.append(error_msg)
                 
                 except Exception as model_err:
-                    print(f"⚠️ Error loading {horizon}: {model_err}")
+                    error_msg = f"⚠️ Error loading {horizon}: {str(model_err)}"
+                    print(error_msg)
+                    errors.append(error_msg)
+                    import traceback
+                    traceback.print_exc()
                     continue
     
     except Exception as e:
-        st.warning(f"⚠️ MongoDB connection failed: {str(e)}")
-        print(f"Error connecting to MongoDB: {e}")
+        error_msg = f"⚠️ MongoDB connection failed: {str(e)}"
+        st.warning(error_msg)
+        print(error_msg)
+        errors.append(error_msg)
         
         # Fallback to local files (for local development)
         try:
@@ -208,7 +220,15 @@ def load_models():
                     }
                     print(f"✅ Loaded {horizon} from local file")
         except Exception as local_err:
-            print(f"Local fallback also failed: {local_err}")
+            error_msg = f"Local fallback also failed: {str(local_err)}"
+            print(error_msg)
+            errors.append(error_msg)
+    
+    # Display errors in Streamlit
+    if errors and not models:
+        st.error("❌ Failed to load models:")
+        for err in errors:
+            st.write(f"- {err}")
     
     if not models:
         st.error("❌ No models found in MongoDB or local files. Please train models first.")
@@ -262,52 +282,71 @@ def main():
     st.title("🌍 AQI Prediction Service")
     st.caption("Real-time Air Quality Index forecasting powered by Machine Learning")
     
-    # ===== TEMPORARY DEBUG INFO =====
+# ===== TEMPORARY DEBUG INFO =====
     with st.expander("🔧 Debug Connection Info", expanded=False):
         import os
-        
-        st.write("**Environment Variables:**")
-        
-        # Check Streamlit secrets
-        try:
-            mongo_uri_exists = 'MONGODB_URI' in st.secrets
-            st.write(f"- Streamlit secrets has MONGODB_URI: {mongo_uri_exists}")
-            if mongo_uri_exists:
-                uri = st.secrets['MONGODB_URI']
-                st.write(f"- URI length: {len(uri)}")
-                st.write(f"- URI starts with: {uri[:20]}...")
-        except Exception as e:
-            st.write(f"- ⚠️ Error checking secrets: {str(e)}")
-        
-        # Check .env fallback
-        env_uri = os.getenv('MONGODB_URI')
-        st.write(f"- OS env has MONGODB_URI: {bool(env_uri)}")
-        
-        st.write("\n**MongoDB Connection Test:**")
-        try:
-            from model_registry import ModelRegistry
-            with ModelRegistry() as reg:
-                st.success("✅ Connected to MongoDB!")
-                st.write(f"- Database: `{reg.db.name}`")
+    
+    st.write("**Environment Variables:**")
+    
+    # Check Streamlit secrets
+    try:
+        mongo_uri_exists = 'MONGODB_URI' in st.secrets
+        st.write(f"- Streamlit secrets has MONGODB_URI: {mongo_uri_exists}")
+        if mongo_uri_exists:
+            uri = st.secrets['MONGODB_URI']
+            st.write(f"- URI length: {len(uri)}")
+            st.write(f"- URI starts with: {uri[:20]}...")
+    except Exception as e:
+        st.write(f"- ⚠️ Error checking secrets: {str(e)}")
+    
+    # Check .env fallback
+    env_uri = os.getenv('MONGODB_URI')
+    st.write(f"- OS env has MONGODB_URI: {bool(env_uri)}")
+    
+    st.write("\n**MongoDB Connection Test:**")
+    try:
+        from model_registry import ModelRegistry
+        with ModelRegistry() as reg:
+            st.success("✅ Connected to MongoDB!")
+            st.write(f"- Database: `{reg.db.name}`")
+            
+            collections = reg.db.list_collection_names()
+            st.write(f"- Collections: {collections}")
+            
+            models = reg.list_models()
+            st.write(f"- Total models in registry: **{len(models)}**")
+            
+            if models:
+                st.write("\n**Latest Models:**")
+                for m in models[:5]:
+                    stage_emoji = "🏆" if m['stage'] == 'production' else "📦"
+                    st.write(f"  {stage_emoji} `{m['model_name']}` {m['version']} ({m['stage']})")
+            else:
+                st.warning("No models found in registry!")
+            
+            # Test loading actual model
+            st.write("\n**Testing Model Load:**")
+            try:
+                test_model, test_meta = reg.get_production_model('aqi_forecast_24h')
                 
-                collections = reg.db.list_collection_names()
-                st.write(f"- Collections: {collections}")
-                
-                models = reg.list_models()
-                st.write(f"- Total models in registry: **{len(models)}**")
-                
-                if models:
-                    st.write("\n**Latest Models:**")
-                    for m in models[:5]:
-                        stage_emoji = "🏆" if m['stage'] == 'production' else "📦"
-                        st.write(f"  {stage_emoji} `{m['model_name']}` {m['version']} ({m['stage']})")
+                if test_model and test_meta:
+                    st.success("✅ Successfully loaded 24h production model!")
+                    st.write(f"- Model type: {type(test_model).__name__}")
+                    st.write(f"- Features: {len(test_meta.get('feature_cols', []))}")
+                    st.write(f"- R²: {test_meta['metrics']['r2']:.3f}")
                 else:
-                    st.warning("No models found in registry!")
+                    st.warning("⚠️ Model metadata exists but load returned None")
                     
-        except Exception as e:
-            st.error(f"❌ Connection failed: {str(e)}")
-            import traceback
-            st.code(traceback.format_exc())
+            except Exception as load_err:
+                st.error(f"❌ Failed to load model: {str(load_err)}")
+                import traceback
+                st.code(traceback.format_exc())
+                
+    except Exception as e:
+        st.error(f"❌ Connection failed: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+# ===== END DEBUG =====
     
     # ========== SIDEBAR - AQI SCALE REFERENCE ==========
     with st.sidebar:
