@@ -25,12 +25,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: Train models
+      - name: Train optimized models with registry
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           OPENWEATHERMAP_API_KEY: ${{ secrets.OPENWEATHERMAP_API_KEY }}
         run: |
-          python src/train_adaptive.py
+          python train_optimized.py
       
       - name: Upload models
         uses: actions/upload-artifact@v4
