@@ -262,6 +262,53 @@ def main():
     st.title("🌍 AQI Prediction Service")
     st.caption("Real-time Air Quality Index forecasting powered by Machine Learning")
     
+    # ===== TEMPORARY DEBUG INFO =====
+    with st.expander("🔧 Debug Connection Info", expanded=False):
+        import os
+        
+        st.write("**Environment Variables:**")
+        
+        # Check Streamlit secrets
+        try:
+            mongo_uri_exists = 'MONGODB_URI' in st.secrets
+            st.write(f"- Streamlit secrets has MONGODB_URI: {mongo_uri_exists}")
+            if mongo_uri_exists:
+                uri = st.secrets['MONGODB_URI']
+                st.write(f"- URI length: {len(uri)}")
+                st.write(f"- URI starts with: {uri[:20]}...")
+        except Exception as e:
+            st.write(f"- ⚠️ Error checking secrets: {str(e)}")
+        
+        # Check .env fallback
+        env_uri = os.getenv('MONGODB_URI')
+        st.write(f"- OS env has MONGODB_URI: {bool(env_uri)}")
+        
+        st.write("\n**MongoDB Connection Test:**")
+        try:
+            from model_registry import ModelRegistry
+            with ModelRegistry() as reg:
+                st.success("✅ Connected to MongoDB!")
+                st.write(f"- Database: `{reg.db.name}`")
+                
+                collections = reg.db.list_collection_names()
+                st.write(f"- Collections: {collections}")
+                
+                models = reg.list_models()
+                st.write(f"- Total models in registry: **{len(models)}**")
+                
+                if models:
+                    st.write("\n**Latest Models:**")
+                    for m in models[:5]:
+                        stage_emoji = "🏆" if m['stage'] == 'production' else "📦"
+                        st.write(f"  {stage_emoji} `{m['model_name']}` {m['version']} ({m['stage']})")
+                else:
+                    st.warning("No models found in registry!")
+                    
+        except Exception as e:
+            st.error(f"❌ Connection failed: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
+    
     # ========== SIDEBAR - AQI SCALE REFERENCE ==========
     with st.sidebar:
         st.title("📊 Information")

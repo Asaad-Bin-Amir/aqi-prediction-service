@@ -1,34 +1,53 @@
 """
-Feature Store - MongoDB Interface
-Manages raw features and training data collections
+AQI Feature Store - MongoDB connection for time-series data
+Works with both .env and Streamlit secrets
 """
-import os
 from pymongo import MongoClient
-from dotenv import load_dotenv
+from datetime import datetime
+import os
 
-load_dotenv()
+# Try Streamlit secrets first (for cloud deployment)
+MONGODB_URI = None
+try:
+    import streamlit as st
+    if hasattr(st, 'secrets') and 'MONGODB_URI' in st.secrets:
+        MONGODB_URI = st.secrets["MONGODB_URI"]
+except:
+    pass
+
+# Fallback to dotenv (for local development)
+if not MONGODB_URI:
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        MONGODB_URI = os.getenv('MONGODB_URI')
+    except:
+        pass
 
 
 class AQIFeatureStore:
-    """
-    MongoDB-based feature store for AQI prediction data
-    
-    Collections:
-    - raw_features: Hourly air quality and weather data from APIs
-    - training_data: Processed features for model training (cached)
-    """
+    """MongoDB Feature Store for AQI data"""
     
     def __init__(self):
         """Initialize MongoDB connection"""
-        self.mongodb_uri = os.getenv('MONGODB_URI')
+        self.mongo_uri = MONGODB_URI or os.getenv('MONGODB_URI')
         
-        if not self.mongodb_uri:
-            raise ValueError("MONGODB_URI not found in environment variables")
+        if not self.mongo_uri:
+            raise ValueError("MONGODB_URI not found! Check Streamlit secrets or .env file")
         
-        self.client = None
-        self.db = None
-        self.raw_features = None
-        self.training_data = None
+        try:
+            self.client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=5000)
+            # Test connection
+            self.client.server_info()
+            
+            self.db = self.client['aqi_feature_store']
+            self.raw_features = self.db['raw_features']
+            
+            print("✅ Connected to AQI Feature Store (MongoDB Atlas)")
+        except Exception as e:
+            raise ConnectionError(f"Failed to connect to MongoDB: {str(e)}")
+    
+    # ... rest of your AQIFeatureStore code stays the same ...
     
     def __enter__(self):
         """Context manager entry - connect to MongoDB"""

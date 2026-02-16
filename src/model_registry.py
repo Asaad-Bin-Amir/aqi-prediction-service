@@ -1,6 +1,6 @@
 """
 Model Registry - Store models in MongoDB GridFS
-Uses GridFS for binary model storage (works with Streamlit Cloud)
+Works with both .env and Streamlit secrets
 """
 from datetime import datetime
 from typing import Dict, Optional, List
@@ -9,9 +9,24 @@ from gridfs import GridFS
 import os
 import joblib
 import io
-from dotenv import load_dotenv
 
-load_dotenv()
+# Try Streamlit secrets first (for cloud deployment)
+MONGODB_URI = None
+try:
+    import streamlit as st
+    if hasattr(st, 'secrets') and 'MONGODB_URI' in st.secrets:
+        MONGODB_URI = st.secrets["MONGODB_URI"]
+except:
+    pass
+
+# Fallback to dotenv (for local development)
+if not MONGODB_URI:
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        MONGODB_URI = os.getenv('MONGODB_URI')
+    except:
+        pass
 
 
 class ModelRegistry:
@@ -19,16 +34,24 @@ class ModelRegistry:
     
     def __init__(self):
         """Initialize connection to MongoDB"""
-        self.mongo_uri = os.getenv('MONGODB_URI')
+        # Use global MONGODB_URI or try environment
+        self.mongo_uri = MONGODB_URI or os.getenv('MONGODB_URI')
+        
         if not self.mongo_uri:
-            raise ValueError("MONGODB_URI not found in .env file!")
+            raise ValueError("MONGODB_URI not found! Check Streamlit secrets or .env file")
         
-        self.client = MongoClient(self.mongo_uri)
-        self.db = self.client['aqi_feature_store']
-        self.registry = self.db['model_registry']
-        self.fs = GridFS(self.db)  # GridFS for binary storage
-        
-        print("✅ Connected to Model Registry (MongoDB)")
+        try:
+            self.client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=5000)
+            # Test connection
+            self.client.server_info()
+            
+            self.db = self.client['aqi_feature_store']
+            self.registry = self.db['model_registry']
+            self.fs = GridFS(self.db)
+            
+            print("✅ Connected to Model Registry (MongoDB)")
+        except Exception as e:
+            raise ConnectionError(f"Failed to connect to MongoDB: {str(e)}")
     
     def register_model(
         self,
