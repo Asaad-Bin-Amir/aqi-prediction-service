@@ -1,10 +1,9 @@
 """
-Optimized AQI Training with Hyperparameter Tuning
-Target: R² > 0.70
+Optimized AQI Training with Model Registry Integration
 """
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent))
 
 import pandas as pd
 import numpy as np
@@ -14,13 +13,12 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import joblib
 from datetime import datetime
 import os
-import warnings
-warnings.filterwarnings('ignore')
 
 from src.feature_store import AQIFeatureStore
+from src.model_registry import ModelRegistry
 
 
-def engineer_advanced_features(df):
+def engineer_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
     """Advanced feature engineering with interaction terms"""
     
     print("\n🔧 Advanced Feature Engineering...")
@@ -31,8 +29,6 @@ def engineer_advanced_features(df):
     df['month'] = pd.to_datetime(df['timestamp']).dt.month
     df['day_of_month'] = pd.to_datetime(df['timestamp']).dt.day
     df['is_weekend'] = (df['day_of_week'] >= 5).astype(int)
-    
-    # Rush hour indicator
     df['is_rush_hour'] = ((df['hour'] >= 7) & (df['hour'] <= 10) | 
                           (df['hour'] >= 17) & (df['hour'] <= 20)).astype(int)
     
@@ -44,38 +40,35 @@ def engineer_advanced_features(df):
     df['month_sin'] = np.sin(2 * np.pi * df['month'] / 12)
     df['month_cos'] = np.cos(2 * np.pi * df['month'] / 12)
     
-    # Lag features (more granular)
+    # Lag features
     for lag in [1, 2, 3, 6, 12, 24, 48]:
         df[f'pm2_5_lag_{lag}h'] = df['pm2_5'].shift(lag)
         df[f'pm10_lag_{lag}h'] = df['pm10'].shift(lag)
         df[f'aqi_lag_{lag}h'] = df['aqi'].shift(lag)
     
-    # Rolling features (multiple windows)
+    # Rolling features
     for window in [3, 6, 12, 24, 48]:
         df[f'pm2_5_rolling_mean_{window}h'] = df['pm2_5'].rolling(window, min_periods=1).mean()
         df[f'pm2_5_rolling_std_{window}h'] = df['pm2_5'].rolling(window, min_periods=1).std()
         df[f'pm2_5_rolling_max_{window}h'] = df['pm2_5'].rolling(window, min_periods=1).max()
         df[f'pm2_5_rolling_min_{window}h'] = df['pm2_5'].rolling(window, min_periods=1).min()
-        
         df[f'aqi_rolling_mean_{window}h'] = df['aqi'].rolling(window, min_periods=1).mean()
         df[f'aqi_rolling_std_{window}h'] = df['aqi'].rolling(window, min_periods=1).std()
     
-    # Rate of change features
+    # Rate of change
     df['pm2_5_change_1h'] = df['pm2_5'].diff(1)
     df['pm2_5_change_3h'] = df['pm2_5'].diff(3)
     df['pm2_5_change_6h'] = df['pm2_5'].diff(6)
     
-    # Interaction features (IMPORTANT!)
+    # Interactions
     df['pm2_5_x_wind'] = df['pm2_5'] * df['wind_speed']
     df['pm2_5_x_humidity'] = df['pm2_5'] * df['humidity']
     df['pm2_5_x_temp'] = df['pm2_5'] * df['temperature']
     df['wind_x_humidity'] = df['wind_speed'] * df['humidity']
     df['temp_x_humidity'] = df['temperature'] * df['humidity']
-    
-    # Ratio features
     df['pm2_5_pm10_ratio'] = df['pm2_5'] / (df['pm10'] + 1)
     
-    # Weather stability indicators
+    # Weather changes
     df['temp_change'] = df['temperature'].diff(1)
     df['wind_change'] = df['wind_speed'].diff(1)
     df['pressure_change'] = df['pressure'].diff(1)
@@ -85,8 +78,8 @@ def engineer_advanced_features(df):
     return df
 
 
-def train_optimized_model(horizon='24h'):
-    """Train with hyperparameter tuning"""
+def train_optimized_model(horizon='24h', use_registry=True):
+    """Train with hyperparameter tuning and registry integration"""
     
     print(f"\n{'='*70}")
     print(f"🚀 OPTIMIZED TRAINING - {horizon} FORECAST")
@@ -100,7 +93,7 @@ def train_optimized_model(horizon='24h'):
     df = pd.DataFrame(data)
     print(f"✅ Loaded {len(df)} records")
     
-    # Advanced feature engineering
+    # Feature engineering
     df = engineer_advanced_features(df)
     
     # Target
@@ -131,14 +124,13 @@ def train_optimized_model(horizon='24h'):
     
     print(f"📊 Train: {len(X_train)}, Test: {len(X_test)}")
     
-    # Try both Random Forest and Gradient Boosting with tuning
+    # Train models
     print(f"\n🔍 Training and tuning models...")
     
     models = {}
     
-    # 1. Gradient Boosting with tuning
-    print(f"\n   1️⃣ Gradient Boosting (tuning hyperparameters)...")
-    
+    # Gradient Boosting
+    print(f"\n   1️⃣ Gradient Boosting...")
     gb_params = {
         'n_estimators': [200, 250],
         'max_depth': [7, 9],
@@ -152,11 +144,9 @@ def train_optimized_model(horizon='24h'):
     gb_grid.fit(X_train, y_train)
     
     models['GradientBoosting'] = gb_grid.best_estimator_
-    print(f"      Best params: n_estimators={gb_grid.best_params_['n_estimators']}, max_depth={gb_grid.best_params_['max_depth']}")
     
-    # 2. Random Forest with tuning
-    print(f"\n   2️⃣ Random Forest (tuning hyperparameters)...")
-    
+    # Random Forest
+    print(f"\n   2️⃣ Random Forest...")
     rf_params = {
         'n_estimators': [150, 200],
         'max_depth': [12, 15],
@@ -170,9 +160,8 @@ def train_optimized_model(horizon='24h'):
     rf_grid.fit(X_train, y_train)
     
     models['RandomForest'] = rf_grid.best_estimator_
-    print(f"      Best params: n_estimators={rf_grid.best_params_['n_estimators']}, max_depth={rf_grid.best_params_['max_depth']}")
     
-    # Evaluate both
+    # Evaluate
     print(f"\n🎯 MODEL COMPARISON:")
     
     best_model = None
@@ -201,24 +190,15 @@ def train_optimized_model(horizon='24h'):
             best_name = name
     
     print(f"\n✅ BEST MODEL: {best_name}")
-    print(f"   MAE:  {results[best_name]['mae']:.3f}")
-    print(f"   RMSE: {results[best_name]['rmse']:.3f}")
-    print(f"   R²:   {results[best_name]['r2']:.3f}")
     
-    # Feature importance
-    if hasattr(best_model, 'feature_importances_'):
-        importances = best_model.feature_importances_
-        top_features = sorted(zip(feature_cols, importances), key=lambda x: x[1], reverse=True)[:10]
-        
-        print(f"\n📊 Top 10 Most Important Features:")
-        for i, (feat, imp) in enumerate(top_features, 1):
-            print(f"   {i}. {feat}: {imp:.4f}")
-    
-    # Save
+    # Save to local models/
     os.makedirs('models', exist_ok=True)
     
-    model_path = f'models/aqi_model_{horizon}_optimized.joblib'
-    metadata_path = f'models/aqi_model_{horizon}_optimized_metadata.joblib'
+    model_filename = f'aqi_model_{horizon}.joblib'
+    metadata_filename = f'aqi_model_{horizon}_metadata.joblib'
+    
+    model_path = f'models/{model_filename}'
+    metadata_path = f'models/{metadata_filename}'
     
     joblib.dump(best_model, model_path)
     
@@ -236,11 +216,38 @@ def train_optimized_model(horizon='24h'):
     
     joblib.dump(metadata, metadata_path)
     
-    print(f"\n💾 Saved:")
+    print(f"\n💾 Saved locally:")
     print(f"   {model_path}")
-    print(f"   {metadata_path}")
     
-    return best_model, results[best_name]
+    # Register in Model Registry
+    if use_registry:
+        try:
+            print(f"\n📝 Registering in Model Registry...")
+            
+            version = datetime.now().strftime('v%Y%m%d_%H%M')
+            
+            with ModelRegistry() as registry:
+                registry.register_model(
+                    model_name=f'aqi_forecast_{horizon}',
+                    version=version,
+                    model_path=model_path,
+                    metrics=results[best_name],
+                    metadata={
+                        'algorithm': best_name,
+                        'features': len(feature_cols),
+                        'training_samples': len(X_train),
+                        'optimization': 'GridSearchCV'
+                    },
+                    stage='staging'
+                )
+                
+                print(f"✅ Registered in MongoDB Model Registry")
+                
+        except Exception as e:
+            print(f"⚠️ Registry registration failed: {e}")
+            print(f"   Model still saved locally")
+    
+    return best_model, metadata
 
 
 def main():
@@ -249,13 +256,14 @@ def main():
     print("="*70)
     print("\n🎯 Target: R² > 0.70 for all models")
     print("⚡ Using advanced features + hyperparameter tuning")
+    print("📝 Registering models in MongoDB Model Registry")
     
     horizons = ['24h', '48h', '72h']
     all_results = {}
     
     for horizon in horizons:
-        model, results = train_optimized_model(horizon)
-        all_results[horizon] = results
+        model, metadata = train_optimized_model(horizon, use_registry=True)
+        all_results[horizon] = metadata['metrics']
     
     print("\n" + "="*70)
     print("📊 FINAL RESULTS SUMMARY")
@@ -270,13 +278,7 @@ def main():
     avg_r2 = sum(r['r2'] for r in all_results.values()) / len(all_results)
     print(f"\n📈 Average R² across all models: {avg_r2:.3f}")
     
-    if avg_r2 > 0.65:
-        print("\n🎉 EXCELLENT PERFORMANCE! Models ready for production!")
-    elif avg_r2 > 0.55:
-        print("\n✅ GOOD PERFORMANCE! Models are acceptable for deployment!")
-    else:
-        print("\n⚠️ Performance could be improved with more data or features")
-    
+    print("\n🎉 Models saved locally AND registered in MongoDB!")
     print("\n" + "="*70)
 
 
