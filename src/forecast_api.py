@@ -6,13 +6,13 @@ AQI Scale: 1-5 (OpenWeather)
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
+import numpy as np
 import joblib
 import os
 
 from src.feature_store import AQIFeatureStore
-from src.feature_engineering import engineer_all_features
 
 app = FastAPI(
     title="AQI Prediction API",
@@ -61,6 +61,64 @@ def get_aqi_category(aqi: float) -> str:
         return "Very Poor"
 
 
+def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Engineer ALL features to match training pipeline
+    Creates 82 features used by optimized models
+    """
+    # Time features
+    df['hour'] = pd.to_datetime(df['timestamp']).dt.hour
+    df['day_of_week'] = pd.to_datetime(df['timestamp']).dt.dayofweek
+    df['month'] = pd.to_datetime(df['timestamp']).dt.month
+    df['day_of_month'] = pd.to_datetime(df['timestamp']).dt.day
+    df['is_weekend'] = (df['day_of_week'] >= 5).astype(int)
+    df['is_rush_hour'] = ((df['hour'] >= 7) & (df['hour'] <= 10) | 
+                          (df['hour'] >= 17) & (df['hour'] <= 20)).astype(int)
+    
+    # Cyclical encoding
+    df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
+    df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
+    df['dow_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
+    df['dow_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
+    df['month_sin'] = np.sin(2 * np.pi * df['month'] / 12)
+    df['month_cos'] = np.cos(2 * np.pi * df['month'] / 12)
+    
+    # Lag features
+    for lag in [1, 2, 3, 6, 12, 24, 48]:
+        df[f'pm2_5_lag_{lag}h'] = df['pm2_5'].shift(lag)
+        df[f'pm10_lag_{lag}h'] = df['pm10'].shift(lag)
+        df[f'aqi_lag_{lag}h'] = df['aqi'].shift(lag)
+    
+    # Rolling features
+    for window in [3, 6, 12, 24, 48]:
+        df[f'pm2_5_rolling_mean_{window}h'] = df['pm2_5'].rolling(window, min_periods=1).mean()
+        df[f'pm2_5_rolling_std_{window}h'] = df['pm2_5'].rolling(window, min_periods=1).std()
+        df[f'pm2_5_rolling_max_{window}h'] = df['pm2_5'].rolling(window, min_periods=1).max()
+        df[f'pm2_5_rolling_min_{window}h'] = df['pm2_5'].rolling(window, min_periods=1).min()
+        df[f'aqi_rolling_mean_{window}h'] = df['aqi'].rolling(window, min_periods=1).mean()
+        df[f'aqi_rolling_std_{window}h'] = df['aqi'].rolling(window, min_periods=1).std()
+    
+    # Rate of change features
+    df['pm2_5_change_1h'] = df['pm2_5'].diff(1)
+    df['pm2_5_change_3h'] = df['pm2_5'].diff(3)
+    df['pm2_5_change_6h'] = df['pm2_5'].diff(6)
+    
+    # Interaction features
+    df['pm2_5_x_wind'] = df['pm2_5'] * df['wind_speed']
+    df['pm2_5_x_humidity'] = df['pm2_5'] * df['humidity']
+    df['pm2_5_x_temp'] = df['pm2_5'] * df['temperature']
+    df['wind_x_humidity'] = df['wind_speed'] * df['humidity']
+    df['temp_x_humidity'] = df['temperature'] * df['humidity']
+    df['pm2_5_pm10_ratio'] = df['pm2_5'] / (df['pm10'] + 1)
+    
+    # Weather change features
+    df['temp_change'] = df['temperature'].diff(1)
+    df['wind_change'] = df['wind_speed'].diff(1)
+    df['pressure_change'] = df['pressure'].diff(1)
+    
+    return df
+
+
 def load_models() -> Dict:
     """Load all trained models"""
     models = {}
@@ -90,7 +148,8 @@ async def root():
             "/current - Current air quality",
             "/forecast/{horizon} - Forecast (24h, 48h, 72h)",
             "/forecast/all - All forecasts",
-            "/health - API health check"
+            "/health - API health check",
+            "/history?days=7 - Historical data"
         ]
     }
 
@@ -169,7 +228,7 @@ async def get_forecast(horizon: str):
     model = joblib.load(model_path)
     metadata = joblib.load(metadata_path)
     
-    # Get data
+    # Get recent data (need historical data for lag features)
     with AQIFeatureStore() as fs:
         data = list(fs.raw_features.find({}).sort('timestamp', -1).limit(100))
     
@@ -180,16 +239,20 @@ async def get_forecast(horizon: str):
         )
     
     # Prepare features
-    df = pd.DataFrame(data).sort_values('timestamp')
-    df_eng = engineer_all_features(df, horizons=[horizon])
+    df = pd.DataFrame(data).sort_values('timestamp').reset_index(drop=True)
     
-    # Get latest features
+    # Engineer all features (matches training pipeline)
+    df = engineer_features(df)
+    
+    # Get features in correct order
     feature_cols = metadata['feature_cols']
-    X = df_eng[feature_cols].iloc[-1:].fillna(0)
+    
+    # Get latest row (most recent data point)
+    X = df[feature_cols].iloc[-1:].fillna(0)
     
     # Predict
     prediction = model.predict(X)[0]
-    prediction = max(1, min(5, prediction))  # Clip to 1-5
+    prediction = max(1, min(5, prediction))  # Clip to 1-5 scale
     
     # Calculate forecast time
     latest_time = df['timestamp'].iloc[-1]
@@ -237,8 +300,6 @@ async def get_history(days: int = 7):
     Args:
         days: Number of days of history (default: 7)
     """
-    from datetime import timedelta
-    
     with AQIFeatureStore() as fs:
         cutoff = datetime.now() - timedelta(days=days)
         data = list(fs.raw_features.find(
@@ -257,8 +318,8 @@ async def get_history(days: int = 7):
                 'aqi_category': get_aqi_category(record['aqi']),
                 'pm2_5': record['pm2_5'],
                 'pm10': record['pm10'],
-                'temperature': record['temperature'],
-                'humidity': record['humidity']
+                'temperature': record.get('temperature'),
+                'humidity': record.get('humidity')
             })
         
         return {
