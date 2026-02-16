@@ -1,6 +1,7 @@
 """
 AQI Prediction Dashboard
 Streamlit web interface for real-time AQI forecasting
+Loads models from MongoDB GridFS (works on Streamlit Cloud!)
 AQI Scale: 1-5 (OpenWeather)
 """
 import streamlit as st
@@ -13,6 +14,7 @@ import joblib
 import os
 
 from feature_store import AQIFeatureStore
+from model_registry import ModelRegistry
 
 
 # Page config
@@ -156,44 +158,49 @@ def load_historical_data(days=7):
     return pd.DataFrame()
 
 
+@st.cache_resource(ttl=3600)  # Cache for 1 hour
 def load_models():
-    """Load trained forecast models from MongoDB"""
+    """Load trained forecast models from MongoDB GridFS"""
     models = {}
     
     try:
-        from model_registry import ModelRegistry
-        
         with ModelRegistry() as registry:
             for horizon in ['24h', '48h', '72h']:
-                # Try to load production model
-                model, metadata = registry.get_production_model(f'aqi_forecast_{horizon}')
+                model_name = f'aqi_forecast_{horizon}'
                 
-                # Fallback to latest staging model
+                # Try production first
+                model, metadata = registry.get_production_model(model_name)
+                
+                # Fallback to latest staging
                 if not model:
-                    model, metadata = registry.load_model(f'aqi_forecast_{horizon}')
+                    model, metadata = registry.load_model(model_name)
                 
                 if model and metadata:
                     models[horizon] = {
                         'model': model,
                         'metadata': metadata
                     }
-                    print(f"✅ Loaded {horizon} from MongoDB (stage: {metadata['stage']})")
+                    stage = metadata.get('stage', 'unknown')
+                    print(f"✅ Loaded {horizon} from MongoDB ({stage})")
     
     except Exception as e:
-        print(f"⚠️ Failed to load from MongoDB: {e}")
-        print(f"   Trying local files...")
+        st.error(f"⚠️ Failed to load from MongoDB: {str(e)}")
+        print(f"Error loading models: {e}")
         
-        # Fallback to local files
-        for horizon in ['24h', '48h', '72h']:
-            model_path = f'models/aqi_model_{horizon}.joblib'
-            metadata_path = f'models/aqi_model_{horizon}_metadata.joblib'
-            
-            if os.path.exists(model_path) and os.path.exists(metadata_path):
-                models[horizon] = {
-                    'model': joblib.load(model_path),
-                    'metadata': joblib.load(metadata_path)
-                }
-                print(f"✅ Loaded {horizon} from local file")
+        # Fallback to local files (for local development)
+        try:
+            for horizon in ['24h', '48h', '72h']:
+                model_path = f'models/aqi_model_{horizon}.joblib'
+                metadata_path = f'models/aqi_model_{horizon}_metadata.joblib'
+                
+                if os.path.exists(model_path) and os.path.exists(metadata_path):
+                    models[horizon] = {
+                        'model': joblib.load(model_path),
+                        'metadata': joblib.load(metadata_path)
+                    }
+                    print(f"✅ Loaded {horizon} from local file")
+        except Exception as local_err:
+            print(f"Local fallback also failed: {local_err}")
     
     return models
 
@@ -447,6 +454,7 @@ def main():
     # Footer
     st.markdown("---")
     st.caption("Data source: OpenWeather API | AQI Scale: 1-5 (European Index)")
+    st.caption("Models loaded from MongoDB GridFS | Updates every hour")
 
 
 if __name__ == "__main__":

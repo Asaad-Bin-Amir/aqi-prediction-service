@@ -1,21 +1,24 @@
 """
-Model Registry - Track model versions, metrics, and lifecycle
-Uses MongoDB for centralized model metadata storage
+Model Registry - Store models in MongoDB GridFS
+Uses GridFS for binary model storage (works with Streamlit Cloud)
 """
 from datetime import datetime
 from typing import Dict, Optional, List
 from pymongo import MongoClient
+from gridfs import GridFS
 import os
+import joblib
+import io
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
 class ModelRegistry:
-    """Centralized model registry for tracking versions and performance"""
+    """Model registry with GridFS for model file storage"""
     
     def __init__(self):
-        """Initialize connection to MongoDB model registry"""
+        """Initialize connection to MongoDB"""
         self.mongo_uri = os.getenv('MONGODB_URI')
         if not self.mongo_uri:
             raise ValueError("MONGODB_URI not found in .env file!")
@@ -23,6 +26,7 @@ class ModelRegistry:
         self.client = MongoClient(self.mongo_uri)
         self.db = self.client['aqi_feature_store']
         self.registry = self.db['model_registry']
+        self.fs = GridFS(self.db)  # GridFS for binary storage
         
         print("✅ Connected to Model Registry (MongoDB)")
     
@@ -30,29 +34,46 @@ class ModelRegistry:
         self,
         model_name: str,
         version: str,
-        model_path: str,
+        model_object,  # ← The actual trained model
         metrics: Dict[str, float],
+        feature_cols: List[str],  # ← Feature column names
         metadata: Optional[Dict] = None,
         stage: str = 'staging'
     ) -> str:
         """
-        Register a new model version
+        Register model and store in MongoDB GridFS
         
         Args:
-            model_name: Name of model (e.g., 'aqi_forecast_24h')
-            version: Version identifier (e.g., 'v20260216_1430')
-            model_path: Path to saved model file
+            model_name: Name (e.g., 'aqi_forecast_24h')
+            version: Version (e.g., 'v20260216_1430')
+            model_object: Trained scikit-learn model
             metrics: Performance metrics (MAE, RMSE, R²)
-            metadata: Additional info (algorithm, features, etc.)
+            feature_cols: List of feature column names
+            metadata: Additional info
             stage: 'staging', 'production', or 'archived'
         
         Returns:
             Model ID
         """
+        # Serialize model to bytes
+        model_bytes = io.BytesIO()
+        joblib.dump(model_object, model_bytes)
+        model_bytes.seek(0)
+        
+        # Store in GridFS
+        file_id = self.fs.put(
+            model_bytes.read(),
+            filename=f"{model_name}_{version}.joblib",
+            model_name=model_name,
+            version=version
+        )
+        
+        # Store metadata in registry collection
         model_entry = {
             'model_name': model_name,
             'version': version,
-            'model_path': model_path,
+            'file_id': file_id,  # Reference to GridFS file
+            'feature_cols': feature_cols,
             'metrics': metrics,
             'metadata': metadata or {},
             'stage': stage,
@@ -65,8 +86,41 @@ class ModelRegistry:
         
         print(f"✅ Registered: {model_name} {version} → {stage}")
         print(f"   R²: {metrics.get('r2', 'N/A'):.3f} | MAE: {metrics.get('mae', 'N/A'):.3f}")
+        print(f"   Stored in MongoDB GridFS")
         
         return str(result.inserted_id)
+    
+    def load_model(
+        self,
+        model_name: str,
+        version: Optional[str] = None,
+        stage: Optional[str] = None
+    ):
+        """
+        Load model from MongoDB GridFS
+        
+        Args:
+            model_name: Name of model
+            version: Specific version (if None, gets latest)
+            stage: Filter by stage
+        
+        Returns:
+            Tuple of (model_object, metadata)
+        """
+        # Get metadata
+        metadata = self.get_model(model_name, version, stage)
+        
+        if not metadata:
+            return None, None
+        
+        # Load from GridFS
+        file_id = metadata['file_id']
+        model_bytes = self.fs.get(file_id).read()
+        
+        # Deserialize
+        model = joblib.load(io.BytesIO(model_bytes))
+        
+        return model, metadata
     
     def get_model(
         self,
@@ -74,31 +128,15 @@ class ModelRegistry:
         version: Optional[str] = None,
         stage: Optional[str] = None
     ) -> Optional[Dict]:
-        """
-        Retrieve model metadata
-        
-        Args:
-            model_name: Name of model
-            version: Specific version (if None, gets latest)
-            stage: Filter by stage (production/staging)
-        
-        Returns:
-            Model metadata dict
-        """
+        """Get model metadata (not the model file itself)"""
         query = {'model_name': model_name, 'status': 'active'}
         
         if version:
             query['version'] = version
-        
         if stage:
             query['stage'] = stage
         
-        # Get latest if no version specified
-        model = self.registry.find_one(
-            query,
-            sort=[('registered_at', -1)]
-        )
-        
+        model = self.registry.find_one(query, sort=[('registered_at', -1)])
         return model
     
     def list_models(
@@ -111,61 +149,24 @@ class ModelRegistry:
         
         if model_name:
             query['model_name'] = model_name
-        
         if stage:
             query['stage'] = stage
         
-        models = list(self.registry.find(
-            query,
-            sort=[('registered_at', -1)]
-        ))
-        
+        models = list(self.registry.find(query, sort=[('registered_at', -1)]))
         return models
     
-    def promote_to_production(
-        self,
-        model_name: str,
-        version: str
-    ) -> bool:
-        """
-        Promote model to production
-        Demotes current production model to archived
-        
-        Args:
-            model_name: Name of model
-            version: Version to promote
-        
-        Returns:
-            Success status
-        """
-        # Demote current production model
+    def promote_to_production(self, model_name: str, version: str) -> bool:
+        """Promote model to production"""
+        # Archive current production
         self.registry.update_many(
-            {
-                'model_name': model_name,
-                'stage': 'production',
-                'status': 'active'
-            },
-            {
-                '$set': {
-                    'stage': 'archived',
-                    'archived_at': datetime.now()
-                }
-            }
+            {'model_name': model_name, 'stage': 'production', 'status': 'active'},
+            {'$set': {'stage': 'archived', 'archived_at': datetime.now()}}
         )
         
-        # Promote new model
+        # Promote new
         result = self.registry.update_one(
-            {
-                'model_name': model_name,
-                'version': version,
-                'status': 'active'
-            },
-            {
-                '$set': {
-                    'stage': 'production',
-                    'promoted_at': datetime.now()
-                }
-            }
+            {'model_name': model_name, 'version': version, 'status': 'active'},
+            {'$set': {'stage': 'production', 'promoted_at': datetime.now()}}
         )
         
         if result.modified_count > 0:
@@ -175,28 +176,18 @@ class ModelRegistry:
             print(f"⚠️ Model not found: {model_name} {version}")
             return False
     
-    def get_production_model(self, model_name: str) -> Optional[Dict]:
-        """Get current production model"""
-        return self.get_model(model_name, stage='production')
+    def get_production_model(self, model_name: str):
+        """Load production model from MongoDB"""
+        return self.load_model(model_name, stage='production')
     
     def compare_models(
         self,
         model_name: str,
         metric: str = 'r2'
     ) -> List[Dict]:
-        """
-        Compare all versions of a model by metric
-        
-        Args:
-            model_name: Name of model
-            metric: Metric to sort by (mae, rmse, r2)
-        
-        Returns:
-            List of models sorted by metric
-        """
+        """Compare all versions of a model by metric"""
         models = self.list_models(model_name)
         
-        # Sort by metric (ascending for mae/rmse, descending for r2)
         reverse = (metric == 'r2')
         
         sorted_models = sorted(
@@ -244,14 +235,11 @@ class ModelRegistry:
     def close(self):
         """Close MongoDB connection"""
         self.client.close()
-        print("✅ Closed Model Registry connection")
     
     def __enter__(self):
-        """Context manager entry"""
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit"""
         self.close()
 
 
@@ -271,19 +259,6 @@ def main():
         else:
             for model in models:
                 print(f"   • {model['model_name']} {model['version']} ({model['stage']})")
-        
-        # Example: Register a test model
-        print("\n📝 Example: Register Test Model")
-        test_metrics = {'mae': 0.237, 'rmse': 0.372, 'r2': 0.770}
-        
-        registry.register_model(
-            model_name='aqi_forecast_24h',
-            version='v_test_001',
-            model_path='models/test.joblib',
-            metrics=test_metrics,
-            metadata={'algorithm': 'GradientBoosting', 'features': 82},
-            stage='staging'
-        )
         
         print("\n✅ Model Registry is working!")
 

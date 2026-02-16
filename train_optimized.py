@@ -1,5 +1,6 @@
 """
 Optimized AQI Training with Model Registry Integration
+Stores models in MongoDB GridFS for cloud deployment
 """
 import sys
 from pathlib import Path
@@ -191,7 +192,7 @@ def train_optimized_model(horizon='24h', use_registry=True):
     
     print(f"\n✅ BEST MODEL: {best_name}")
     
-    # Save to local models/
+    # Save to local models/ (for local testing)
     os.makedirs('models', exist_ok=True)
     
     model_filename = f'aqi_model_{horizon}.joblib'
@@ -219,24 +220,28 @@ def train_optimized_model(horizon='24h', use_registry=True):
     print(f"\n💾 Saved locally:")
     print(f"   {model_path}")
     
-    # Register in Model Registry
+    # Register in Model Registry (MongoDB GridFS)
     if use_registry:
         try:
-            print(f"\n📝 Registering in Model Registry...")
+            print(f"\n📝 Registering in Model Registry (MongoDB)...")
             
             version = datetime.now().strftime('v%Y%m%d_%H%M')
             
             with ModelRegistry() as registry:
+                # Upload model object to MongoDB GridFS
                 registry.register_model(
                     model_name=f'aqi_forecast_{horizon}',
                     version=version,
-                    model_path=model_path,
+                    model_object=best_model,  # ← Pass actual model object
                     metrics=results[best_name],
+                    feature_cols=feature_cols,  # ← Pass feature columns
                     metadata={
                         'algorithm': best_name,
                         'features': len(feature_cols),
                         'training_samples': len(X_train),
-                        'optimization': 'GridSearchCV'
+                        'test_samples': len(X_test),
+                        'optimization': 'GridSearchCV',
+                        'horizon': horizon
                     },
                     stage='staging'
                 )
@@ -246,6 +251,8 @@ def train_optimized_model(horizon='24h', use_registry=True):
         except Exception as e:
             print(f"⚠️ Registry registration failed: {e}")
             print(f"   Model still saved locally")
+            import traceback
+            traceback.print_exc()
     
     return best_model, metadata
 
@@ -256,7 +263,7 @@ def main():
     print("="*70)
     print("\n🎯 Target: R² > 0.70 for all models")
     print("⚡ Using advanced features + hyperparameter tuning")
-    print("📝 Registering models in MongoDB Model Registry")
+    print("📝 Registering models in MongoDB Model Registry (GridFS)")
     
     horizons = ['24h', '48h', '72h']
     all_results = {}
@@ -278,7 +285,8 @@ def main():
     avg_r2 = sum(r['r2'] for r in all_results.values()) / len(all_results)
     print(f"\n📈 Average R² across all models: {avg_r2:.3f}")
     
-    print("\n🎉 Models saved locally AND registered in MongoDB!")
+    print("\n🎉 Models saved locally AND in MongoDB GridFS!")
+    print("   → Streamlit Cloud will load from MongoDB")
     print("\n" + "="*70)
 
 
