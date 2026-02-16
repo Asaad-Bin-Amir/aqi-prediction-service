@@ -127,34 +127,40 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def load_latest_data():
     """Load latest AQI data from MongoDB"""
-    with AQIFeatureStore() as fs:
-        latest = fs.raw_features.find_one(sort=[('timestamp', -1)])
-        
-        if latest:
-            return {
-                'aqi': latest.get('aqi'),
-                'pm2_5': latest.get('pm2_5'),
-                'pm10': latest.get('pm10'),
-                'o3': latest.get('o3'),
-                'temperature': latest.get('temperature'),
-                'humidity': latest.get('humidity'),
-                'wind_speed': latest.get('wind_speed'),
-                'timestamp': latest.get('timestamp'),
-                'location': latest.get('location', 'Karachi'),
-            }
+    try:
+        with AQIFeatureStore() as fs:
+            latest = fs.raw_features.find_one(sort=[('timestamp', -1)])
+            
+            if latest:
+                return {
+                    'aqi': latest.get('aqi'),
+                    'pm2_5': latest.get('pm2_5'),
+                    'pm10': latest.get('pm10'),
+                    'o3': latest.get('o3'),
+                    'temperature': latest.get('temperature'),
+                    'humidity': latest.get('humidity'),
+                    'wind_speed': latest.get('wind_speed'),
+                    'timestamp': latest.get('timestamp'),
+                    'location': latest.get('location', 'Karachi'),
+                }
+    except Exception as e:
+        st.error(f"Error loading data: {str(e)}")
     return None
 
 
 def load_historical_data(days=7):
     """Load historical AQI data"""
-    with AQIFeatureStore() as fs:
-        cutoff = datetime.now() - timedelta(days=days)
-        data = list(fs.raw_features.find(
-            {'timestamp': {'$gte': cutoff}}
-        ).sort('timestamp', 1))
-        
-        if data:
-            return pd.DataFrame(data)
+    try:
+        with AQIFeatureStore() as fs:
+            cutoff = datetime.now() - timedelta(days=days)
+            data = list(fs.raw_features.find(
+                {'timestamp': {'$gte': cutoff}}
+            ).sort('timestamp', 1))
+            
+            if data:
+                return pd.DataFrame(data)
+    except Exception as e:
+        st.error(f"Error loading historical data: {str(e)}")
     return pd.DataFrame()
 
 
@@ -193,16 +199,13 @@ def load_models():
                         errors.append(error_msg)
                 
                 except Exception as model_err:
-                    error_msg = f"⚠️ Error loading {horizon}: {str(model_err)}"
+                    error_msg = f"⚠️ Error loading {horizon}: {str(model_err)[:100]}"
                     print(error_msg)
                     errors.append(error_msg)
-                    import traceback
-                    traceback.print_exc()
                     continue
     
     except Exception as e:
         error_msg = f"⚠️ MongoDB connection failed: {str(e)}"
-        st.warning(error_msg)
         print(error_msg)
         errors.append(error_msg)
         
@@ -224,16 +227,7 @@ def load_models():
             print(error_msg)
             errors.append(error_msg)
     
-    # Display errors in Streamlit
-    if errors and not models:
-        st.error("❌ Failed to load models:")
-        for err in errors:
-            st.write(f"- {err}")
-    
-    if not models:
-        st.error("❌ No models found in MongoDB or local files. Please train models first.")
-    
-    return models
+    return models, errors
 
 
 def make_predictions(current_data, models):
@@ -243,36 +237,39 @@ def make_predictions(current_data, models):
     if not models:
         return predictions
     
-    # Prepare feature data
-    with AQIFeatureStore() as fs:
-        data = list(fs.raw_features.find({}).sort('timestamp', -1).limit(100))
-    
-    if len(data) < 50:
-        st.warning("⚠️ Insufficient data for predictions (need at least 50 records)")
-        return predictions
-    
-    df = pd.DataFrame(data).sort_values('timestamp').reset_index(drop=True)
-    
-    for horizon, model_info in models.items():
-        try:
-            # Engineer features (MATCH TRAINING PIPELINE)
-            df_eng = engineer_features(df.copy())
-            
-            # Get latest features
-            feature_cols = model_info['metadata']['feature_cols']
-            X = df_eng[feature_cols].iloc[-1:].fillna(0)
-            
-            # Predict
-            pred = model_info['model'].predict(X)[0]
-            pred = max(1, min(5, pred))  # Clip to 1-5
-            
-            predictions[horizon] = {
-                'aqi': round(pred, 1),
-                'category': get_aqi_category(pred),
-                'color': get_aqi_color(pred)
-            }
-        except Exception as e:
-            st.error(f"Prediction error for {horizon}: {str(e)}")
+    try:
+        # Prepare feature data
+        with AQIFeatureStore() as fs:
+            data = list(fs.raw_features.find({}).sort('timestamp', -1).limit(100))
+        
+        if len(data) < 50:
+            st.warning("⚠️ Insufficient data for predictions (need at least 50 records)")
+            return predictions
+        
+        df = pd.DataFrame(data).sort_values('timestamp').reset_index(drop=True)
+        
+        for horizon, model_info in models.items():
+            try:
+                # Engineer features (MATCH TRAINING PIPELINE)
+                df_eng = engineer_features(df.copy())
+                
+                # Get latest features
+                feature_cols = model_info['metadata']['feature_cols']
+                X = df_eng[feature_cols].iloc[-1:].fillna(0)
+                
+                # Predict
+                pred = model_info['model'].predict(X)[0]
+                pred = max(1, min(5, pred))  # Clip to 1-5
+                
+                predictions[horizon] = {
+                    'aqi': round(pred, 1),
+                    'category': get_aqi_category(pred),
+                    'color': get_aqi_color(pred)
+                }
+            except Exception as e:
+                st.error(f"Prediction error for {horizon}: {str(e)[:100]}")
+    except Exception as e:
+        st.error(f"Error preparing prediction data: {str(e)}")
     
     return predictions
 
@@ -282,71 +279,106 @@ def main():
     st.title("🌍 AQI Prediction Service")
     st.caption("Real-time Air Quality Index forecasting powered by Machine Learning")
     
-# ===== TEMPORARY DEBUG INFO =====
+    # ===== TEMPORARY DEBUG INFO =====
     with st.expander("🔧 Debug Connection Info", expanded=False):
         import os
-    
-    st.write("**Environment Variables:**")
-    
-    # Check Streamlit secrets
-    try:
-        mongo_uri_exists = 'MONGODB_URI' in st.secrets
-        st.write(f"- Streamlit secrets has MONGODB_URI: {mongo_uri_exists}")
-        if mongo_uri_exists:
-            uri = st.secrets['MONGODB_URI']
-            st.write(f"- URI length: {len(uri)}")
-            st.write(f"- URI starts with: {uri[:20]}...")
-    except Exception as e:
-        st.write(f"- ⚠️ Error checking secrets: {str(e)}")
-    
-    # Check .env fallback
-    env_uri = os.getenv('MONGODB_URI')
-    st.write(f"- OS env has MONGODB_URI: {bool(env_uri)}")
-    
-    st.write("\n**MongoDB Connection Test:**")
-    try:
-        from model_registry import ModelRegistry
-        with ModelRegistry() as reg:
-            st.success("✅ Connected to MongoDB!")
-            st.write(f"- Database: `{reg.db.name}`")
-            
-            collections = reg.db.list_collection_names()
-            st.write(f"- Collections: {collections}")
-            
-            models = reg.list_models()
-            st.write(f"- Total models in registry: **{len(models)}**")
-            
-            if models:
-                st.write("\n**Latest Models:**")
-                for m in models[:5]:
-                    stage_emoji = "🏆" if m['stage'] == 'production' else "📦"
-                    st.write(f"  {stage_emoji} `{m['model_name']}` {m['version']} ({m['stage']})")
-            else:
-                st.warning("No models found in registry!")
-            
-            # Test loading actual model
-            st.write("\n**Testing Model Load:**")
-            try:
-                test_model, test_meta = reg.get_production_model('aqi_forecast_24h')
+        
+        st.write("**Environment Variables:**")
+        
+        # Check Streamlit secrets
+        try:
+            mongo_uri_exists = 'MONGODB_URI' in st.secrets
+            st.write(f"- Streamlit secrets has MONGODB_URI: {mongo_uri_exists}")
+            if mongo_uri_exists:
+                uri = st.secrets['MONGODB_URI']
+                st.write(f"- URI length: {len(uri)}")
+                st.write(f"- URI starts with: {uri[:20]}...")
+        except Exception as e:
+            st.write(f"- ⚠️ Error checking secrets: {str(e)}")
+        
+        # Check .env fallback
+        env_uri = os.getenv('MONGODB_URI')
+        st.write(f"- OS env has MONGODB_URI: {bool(env_uri)}")
+        
+        st.write("\n**MongoDB Connection Test:**")
+        try:
+            from model_registry import ModelRegistry
+            with ModelRegistry() as reg:
+                st.success("✅ Connected to MongoDB!")
+                st.write(f"- Database: `{reg.db.name}`")
                 
-                if test_model and test_meta:
-                    st.success("✅ Successfully loaded 24h production model!")
-                    st.write(f"- Model type: {type(test_model).__name__}")
-                    st.write(f"- Features: {len(test_meta.get('feature_cols', []))}")
-                    st.write(f"- R²: {test_meta['metrics']['r2']:.3f}")
+                collections = reg.db.list_collection_names()
+                st.write(f"- Collections: {collections}")
+                
+                models_list = reg.list_models()
+                st.write(f"- Total models in registry: **{len(models_list)}**")
+                
+                if models_list:
+                    st.write("\n**Latest Models:**")
+                    for m in models_list[:5]:
+                        stage_emoji = "🏆" if m['stage'] == 'production' else "📦"
+                        st.write(f"  {stage_emoji} `{m['model_name']}` {m['version']} ({m['stage']})")
                 else:
-                    st.warning("⚠️ Model metadata exists but load returned None")
+                    st.warning("No models found in registry!")
                     
-            except Exception as load_err:
-                st.error(f"❌ Failed to load model: {str(load_err)}")
-                import traceback
-                st.code(traceback.format_exc())
+        except Exception as e:
+            st.error(f"❌ Connection failed: {str(e)}")
+    # ===== END DEBUG =====
+    
+    # ===== RETRAIN MODELS BUTTON =====
+    st.warning("⚠️ Models incompatible with Python 3.13 - Need retraining")
+    
+    if st.button("🔄 Retrain Models in Cloud Environment (Takes 10 minutes)"):
+        with st.spinner("Training models... Please wait..."):
+            try:
+                import subprocess
+                import sys
                 
-    except Exception as e:
-        st.error(f"❌ Connection failed: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
-# ===== END DEBUG =====
+                st.info("Starting training pipeline...")
+                
+                # Run training script
+                result = subprocess.run(
+                    [sys.executable, "train_optimized.py"],
+                    capture_output=True,
+                    text=True,
+                    timeout=600  # 10 minute timeout
+                )
+                
+                if result.returncode == 0:
+                    st.success("✅ Models retrained successfully!")
+                    
+                    with st.expander("Training Output"):
+                        st.code(result.stdout)
+                    
+                    # Promote to production
+                    from model_registry import ModelRegistry
+                    import re
+                    
+                    # Extract version from output
+                    version_match = re.search(r'v\d{8}_\d{4}', result.stdout)
+                    if version_match:
+                        version = version_match.group(0)
+                        
+                        with ModelRegistry() as reg:
+                            reg.promote_to_production('aqi_forecast_24h', version)
+                            reg.promote_to_production('aqi_forecast_48h', version)
+                            reg.promote_to_production('aqi_forecast_72h', version)
+                        
+                        st.success(f"✅ Promoted {version} to production!")
+                        st.balloons()
+                        
+                        # Clear cache and reload
+                        st.cache_resource.clear()
+                        st.rerun()
+                else:
+                    st.error("❌ Training failed!")
+                    st.code(result.stderr)
+                    
+            except subprocess.TimeoutExpired:
+                st.error("❌ Training timed out (>10 minutes)")
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+    # ===== END RETRAIN =====
     
     # ========== SIDEBAR - AQI SCALE REFERENCE ==========
     with st.sidebar:
@@ -428,7 +460,7 @@ def main():
     
     # Load data
     current = load_latest_data()
-    models = load_models()
+    models, errors = load_models()
     
     if not current:
         st.error("❌ No data available. Please run data collection first.")
@@ -497,7 +529,11 @@ def main():
         else:
             st.info("⏳ Collecting more data for accurate predictions...")
     else:
-        st.warning("⚠️ No trained models available. Please run training pipeline.")
+        st.warning("⚠️ No trained models available. Click 'Retrain Models' button above.")
+        if errors:
+            with st.expander("Error Details"):
+                for err in errors:
+                    st.write(f"- {err}")
     
     # Historical Trends
     st.header("📈 Historical Trends")
