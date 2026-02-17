@@ -126,11 +126,16 @@ def load_models():
     return models
 
 def load_latest_data():
-    """Load latest AQI data"""
+    """Load latest AQI data from MongoDB"""
     try:
         with AQIFeatureStore() as fs:
-            latest = fs.raw_features.find_one(sort=[('timestamp', -1)])
+            # Force fresh query - no caching
+            latest = fs.raw_features.find_one(
+                sort=[('timestamp', -1)]
+            )
+            
             if latest:
+                print(f"DEBUG: Loaded AQI = {latest.get('aqi')} from {latest.get('timestamp')}")  # Debug
                 return {
                     'aqi': latest.get('aqi'),
                     'pm2_5': latest.get('pm2_5'),
