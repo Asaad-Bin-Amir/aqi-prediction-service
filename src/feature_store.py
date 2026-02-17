@@ -42,13 +42,13 @@ class AQIFeatureStore:
     def __enter__(self):
         """Context manager entry"""
         try:
-            # FIX: Use self.mongo_uri (not self.mongodb_uri)
             self.client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=5000)
             
             # Test connection
             self.client.server_info()
             
-            self.db = self.client['aqi_feature_store']
+            # FIX: Use correct database name
+            self.db = self.client['aqi_prediction']  # ← CHANGED
             self.raw_features = self.db['raw_features']
             
             print("✅ Connected to AQI Feature Store (MongoDB Atlas)")
