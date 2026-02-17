@@ -6,7 +6,7 @@ Real-time Air Quality Index forecasting system for Karachi, Pakistan using Machi
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/Status-Production-success)
 
-## **🚀 Dashboard:** [https://aqi-prediction-service-5fymnege78mr992xtvm8dh.streamlit.app/](https://aqi-prediction-service-5fymnege78mr992xtvm8dh.streamlit.app/)
+## **🚀 Dashboard:** [https://aqi-prediction-service-pmsam2s4c2xs2bjnqpzv4p.streamlit.app/]
 
 ## 📋 Table of Contents
 
