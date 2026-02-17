@@ -35,8 +35,16 @@ class AQIFeatureStore:
         if not self.mongo_uri:
             raise ValueError("MONGODB_URI not found! Check Streamlit secrets or .env file")
         
+        self.client = None
+        self.db = None
+        self.raw_features = None
+    
+    def __enter__(self):
+        """Context manager entry"""
         try:
+            # FIX: Use self.mongo_uri (not self.mongodb_uri)
             self.client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=5000)
+            
             # Test connection
             self.client.server_info()
             
@@ -45,68 +53,37 @@ class AQIFeatureStore:
             
             print("✅ Connected to AQI Feature Store (MongoDB Atlas)")
         except Exception as e:
-            raise ConnectionError(f"Failed to connect to MongoDB: {str(e)}")
-    
-    # ... rest of your AQIFeatureStore code stays the same ...
-    
-    def __enter__(self):
-        """Context manager entry - connect to MongoDB"""
-        self.client = MongoClient(self.mongodb_uri)
-        self.db = self.client['aqi_prediction']
-        self.raw_features = self.db['raw_features']
-        self.training_data = self.db['training_data']
-        
-        print("✅ Connected to AQI Feature Store (MongoDB Atlas)")
+            print(f"❌ Failed to connect: {str(e)}")
+            raise ConnectionError(f"MongoDB connection failed: {str(e)}")
         
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit - close MongoDB connection"""
+        """Context manager exit"""
         if self.client:
             self.client.close()
             print("✅ Closed feature store connection")
-        
-        return False
     
-    def get_latest_features(self, limit=100):
-        """
-        Get latest raw features
-        
-        Args:
-            limit: Number of recent records to return
-        
-        Returns:
-            List of feature documents
-        """
-        return list(self.raw_features.find({}).sort('timestamp', -1).limit(limit))
+    def close(self):
+        """Close MongoDB connection"""
+        if self.client:
+            self.client.close()
     
-    def get_feature_count(self):
-        """Get total count of raw features"""
-        return self.raw_features.count_documents({})
+    def store_features(self, data: dict):
+        """Store raw features in MongoDB"""
+        try:
+            data['timestamp'] = datetime.now()
+            result = self.raw_features.insert_one(data)
+            return result.inserted_id
+        except Exception as e:
+            print(f"Error storing features: {e}")
+            return None
     
-    def clear_all_data(self):
-        """Clear all collections (use with caution!)"""
-        self.raw_features.delete_many({})
-        self.training_data.delete_many({})
-        print("⚠️ All data cleared from feature store")
-
-
-# Test the feature store
-if __name__ == "__main__":
-    print("Testing AQI Feature Store...\n")
-    
-    with AQIFeatureStore() as fs:
-        count = fs.get_feature_count()
-        print(f"📊 Total raw features: {count}")
-        
-        if count > 0:
-            latest = fs.raw_features.find_one(sort=[('timestamp', -1)])
-            print(f"\n🕐 Latest record:")
-            print(f"   Timestamp: {latest.get('timestamp')}")
-            print(f"   AQI: {latest.get('aqi')}")
-            print(f"   PM2.5: {latest.get('pm2_5')}")
-            print(f"   Location: {latest.get('location')}")
-        else:
-            print("\n⚠️ No data in feature store yet")
-    
-    print("\n✅ Feature store test complete!")
+    def get_latest_features(self, limit: int = 100):
+        """Retrieve latest feature records"""
+        try:
+            cursor = self.raw_features.find().sort('timestamp', -1).limit(limit)
+            return list(cursor)
+        except Exception as e:
+            print(f"Error retrieving features: {e}")
+            return []
