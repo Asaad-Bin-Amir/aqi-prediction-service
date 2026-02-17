@@ -5,6 +5,7 @@ Streamlit web interface for real-time AQI forecasting
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 from datetime import datetime, timedelta
 import numpy as np
 import os
@@ -129,27 +130,43 @@ def load_latest_data():
     """Load latest AQI data from MongoDB"""
     try:
         with AQIFeatureStore() as fs:
-            # Force fresh query - no caching
-            latest = fs.raw_features.find_one(
-                sort=[('timestamp', -1)]
-            )
+            latest = fs.raw_features.find_one(sort=[('timestamp', -1)])
             
             if latest:
-                print(f"DEBUG: Loaded AQI = {latest.get('aqi')} from {latest.get('timestamp')}")  # Debug
                 return {
                     'aqi': latest.get('aqi'),
                     'pm2_5': latest.get('pm2_5'),
                     'pm10': latest.get('pm10'),
                     'o3': latest.get('o3'),
+                    'no2': latest.get('no2'),
+                    'so2': latest.get('so2'),
+                    'co': latest.get('co'),
                     'temperature': latest.get('temperature'),
                     'humidity': latest.get('humidity'),
                     'wind_speed': latest.get('wind_speed'),
+                    'pressure': latest.get('pressure'),
                     'timestamp': latest.get('timestamp'),
                     'location': latest.get('location', 'Karachi'),
                 }
     except Exception as e:
         st.error(f"Database error: {str(e)}")
     return None
+
+def load_historical_data(days=7):
+    """Load historical data from MongoDB"""
+    try:
+        with AQIFeatureStore() as fs:
+            cutoff = datetime.now() - timedelta(days=days)
+            cursor = fs.raw_features.find(
+                {'timestamp': {'$gte': cutoff}}
+            ).sort('timestamp', 1)
+            
+            data = list(cursor)
+            if data:
+                return pd.DataFrame(data)
+    except Exception as e:
+        st.error(f"Error loading historical data: {str(e)}")
+    return pd.DataFrame()
 
 def make_predictions(current_data, models):
     """Generate predictions"""
@@ -190,6 +207,27 @@ def main():
     st.title("🌍 AQI Prediction Service")
     st.caption("Real-time Air Quality Index forecasting powered by Machine Learning")
     
+    # Sidebar
+    with st.sidebar:
+        st.title("📊 Information")
+        
+        with st.expander("ℹ️ AQI Scale Reference", expanded=False):
+            st.markdown("### 📊 AQI Scale (1-5)")
+            st.markdown("""
+            - **1** - Good ✅
+            - **2** - Fair ⚪
+            - **3** - Moderate 🟡
+            - **4** - Poor 🟠
+            - **5** - Very Poor 🔴
+            
+            This project uses the **European CAQI scale** (1-5)
+            from OpenWeather API.
+            """)
+        
+        st.markdown("---")
+        st.caption("Data updates every hour")
+        st.caption("Models: GradientBoosting + XGBoost")
+    
     # Load data
     current = load_latest_data()
     
@@ -197,13 +235,14 @@ def main():
         st.error("❌ No data available. Please check database connection.")
         return
     
-    # Current Status
+    # ========== CURRENT STATUS ==========
     st.header("📊 Current Air Quality")
     
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("AQI", f"{current['aqi']}/5", get_aqi_category(current['aqi']))
+        st.metric("AQI", f"{current['aqi']}/5")
+        st.caption(get_aqi_category(current['aqi']))
     
     with col2:
         st.metric("PM2.5", f"{current['pm2_5']:.1f} µg/m³")
@@ -214,10 +253,10 @@ def main():
     with col4:
         st.metric("Temperature", f"{current['temperature']:.1f}°C")
     
-    # AQI Indicator
+    # AQI Status Banner
     aqi_color = get_aqi_color(current['aqi'])
     st.markdown(f"""
-    <div style='background-color: {aqi_color}; padding: 20px; border-radius: 10px; text-align: center;'>
+    <div style='background-color: {aqi_color}; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;'>
         <h2 style='color: white; margin: 0;'>{get_aqi_category(current['aqi'])}</h2>
         <p style='color: white; margin: 10px 0 0 0;'>{get_health_message(current['aqi'])}</p>
     </div>
@@ -225,7 +264,7 @@ def main():
     
     st.caption(f"📍 {current['location']} | ⏰ Last updated: {current['timestamp']}")
     
-    # Forecasts
+    # ========== FORECASTS ==========
     st.header("🔮 AQI Forecasts")
     
     models = load_models()
@@ -248,11 +287,197 @@ def main():
         else:
             st.info("⏳ Collecting more data for predictions...")
     else:
-        st.warning("⚠️ Models not available. Training in progress...")
+        st.warning("⚠️ Models not available.")
+    
+    # ========== HISTORICAL TRENDS ==========
+    st.header("📈 Historical Trends")
+    
+    df_hist = load_historical_data(days=7)
+    
+    if not df_hist.empty:
+        # AQI Trend with color zones
+        fig_aqi = go.Figure()
+        
+        # Add colored zones
+        fig_aqi.add_hrect(y0=0, y1=1.5, fillcolor="green", opacity=0.1, line_width=0)
+        fig_aqi.add_hrect(y0=1.5, y1=2.5, fillcolor="yellow", opacity=0.1, line_width=0)
+        fig_aqi.add_hrect(y0=2.5, y1=3.5, fillcolor="orange", opacity=0.1, line_width=0)
+        fig_aqi.add_hrect(y0=3.5, y1=4.5, fillcolor="red", opacity=0.1, line_width=0)
+        fig_aqi.add_hrect(y0=4.5, y1=5.5, fillcolor="purple", opacity=0.1, line_width=0)
+        
+        # Add AQI line
+        fig_aqi.add_trace(go.Scatter(
+            x=df_hist['timestamp'],
+            y=df_hist['aqi'],
+            mode='lines+markers',
+            name='AQI',
+            line=dict(color='#FF6B6B', width=3),
+            marker=dict(size=8)
+        ))
+        
+        fig_aqi.update_layout(
+            title='AQI Trend (Last 7 Days)',
+            xaxis_title='Time',
+            yaxis_title='AQI (1-5 scale)',
+            hovermode='x unified',
+            yaxis=dict(range=[0, 6]),
+            height=400
+        )
+        st.plotly_chart(fig_aqi, use_container_width=True)
+        
+        # Pollutants & Weather
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Particulate Matter
+            fig_pm = go.Figure()
+            fig_pm.add_trace(go.Scatter(
+                x=df_hist['timestamp'], 
+                y=df_hist['pm2_5'], 
+                name='PM2.5',
+                line=dict(color='#FF6B6B', width=2)
+            ))
+            fig_pm.add_trace(go.Scatter(
+                x=df_hist['timestamp'], 
+                y=df_hist['pm10'], 
+                name='PM10',
+                line=dict(color='#4ECDC4', width=2)
+            ))
+            fig_pm.update_layout(
+                title='Particulate Matter',
+                xaxis_title='Time',
+                yaxis_title='µg/m³',
+                hovermode='x unified',
+                height=350
+            )
+            st.plotly_chart(fig_pm, use_container_width=True)
+        
+        with col2:
+            # Temperature & Humidity
+            fig_weather = go.Figure()
+            fig_weather.add_trace(go.Scatter(
+                x=df_hist['timestamp'], 
+                y=df_hist['temperature'], 
+                name='Temperature (°C)',
+                line=dict(color='#FF9F40', width=2)
+            ))
+            fig_weather.add_trace(go.Scatter(
+                x=df_hist['timestamp'], 
+                y=df_hist['humidity'], 
+                name='Humidity (%)',
+                yaxis='y2',
+                line=dict(color='#4BC0C0', width=2)
+            ))
+            fig_weather.update_layout(
+                title='Weather Conditions',
+                xaxis_title='Time',
+                yaxis_title='Temperature (°C)',
+                yaxis2=dict(
+                    title='Humidity (%)', 
+                    overlaying='y', 
+                    side='right'
+                ),
+                hovermode='x unified',
+                height=350
+            )
+            st.plotly_chart(fig_weather, use_container_width=True)
+        
+        # Additional Pollutants
+        st.subheader("🧪 Other Pollutants")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Gases (NO2, O3, SO2)
+            fig_gases = go.Figure()
+            if 'no2' in df_hist.columns:
+                fig_gases.add_trace(go.Scatter(
+                    x=df_hist['timestamp'], 
+                    y=df_hist['no2'], 
+                    name='NO₂',
+                    line=dict(color='#FF6384', width=2)
+                ))
+            if 'o3' in df_hist.columns:
+                fig_gases.add_trace(go.Scatter(
+                    x=df_hist['timestamp'], 
+                    y=df_hist['o3'], 
+                    name='O₃',
+                    line=dict(color='#36A2EB', width=2)
+                ))
+            if 'so2' in df_hist.columns:
+                fig_gases.add_trace(go.Scatter(
+                    x=df_hist['timestamp'], 
+                    y=df_hist['so2'], 
+                    name='SO₂',
+                    line=dict(color='#FFCE56', width=2)
+                ))
+            fig_gases.update_layout(
+                title='Gaseous Pollutants',
+                xaxis_title='Time',
+                yaxis_title='µg/m³',
+                hovermode='x unified',
+                height=350
+            )
+            st.plotly_chart(fig_gases, use_container_width=True)
+        
+        with col2:
+            # Wind Speed & Pressure
+            fig_wind = go.Figure()
+            fig_wind.add_trace(go.Scatter(
+                x=df_hist['timestamp'], 
+                y=df_hist['wind_speed'], 
+                name='Wind Speed (m/s)',
+                line=dict(color='#9966FF', width=2)
+            ))
+            fig_wind.add_trace(go.Scatter(
+                x=df_hist['timestamp'], 
+                y=df_hist['pressure'], 
+                name='Pressure (hPa)',
+                yaxis='y2',
+                line=dict(color='#FF9F40', width=2)
+            ))
+            fig_wind.update_layout(
+                title='Wind & Pressure',
+                xaxis_title='Time',
+                yaxis_title='Wind Speed (m/s)',
+                yaxis2=dict(
+                    title='Pressure (hPa)', 
+                    overlaying='y', 
+                    side='right'
+                ),
+                hovermode='x unified',
+                height=350
+            )
+            st.plotly_chart(fig_wind, use_container_width=True)
+        
+        # Statistics
+        st.subheader("📊 7-Day Statistics")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            avg_aqi = df_hist['aqi'].mean()
+            st.metric("Average AQI", f"{avg_aqi:.1f}/5", get_aqi_category(avg_aqi))
+        
+        with col2:
+            max_aqi = df_hist['aqi'].max()
+            st.metric("Peak AQI", f"{max_aqi:.1f}/5", "Highest")
+        
+        with col3:
+            avg_pm25 = df_hist['pm2_5'].mean()
+            st.metric("Avg PM2.5", f"{avg_pm25:.1f} µg/m³")
+        
+        with col4:
+            avg_temp = df_hist['temperature'].mean()
+            st.metric("Avg Temperature", f"{avg_temp:.1f}°C")
+    
+    else:
+        st.info("📊 Collecting historical data... Check back soon!")
     
     # Footer
     st.markdown("---")
-    st.caption("Data source: OpenWeather API | AQI Scale: 1-5 (European Index)")
+    st.caption("Data source: OpenWeather API | AQI Scale: 1-5 (European CAQI)")
+    st.caption("Models: GradientBoosting & XGBoost | MongoDB Atlas")
 
 if __name__ == "__main__":
     main()
