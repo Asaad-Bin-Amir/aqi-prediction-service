@@ -221,11 +221,11 @@ def main():
         with st.expander("ℹ️ AQI Scale Reference", expanded=False):
             st.markdown("### 📊 AQI Scale (1-5)")
             st.markdown("""
-            - **1** - Good ✅
-            - **2** - Fair ⚪
-            - **3** - Moderate 🟡
-            - **4** - Poor 🟠
-            - **5** - Very Poor 🔴
+            - **1** - Good 🟢
+            - **2** - Fair 🟡
+            - **3** - Moderate 🟠
+            - **4** - Poor 🔴
+            - **5** - Very Poor 🟣
             
             This project uses the **European CAQI scale** (1-5)
             from OpenWeather API.
