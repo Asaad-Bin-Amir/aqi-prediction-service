@@ -59,6 +59,13 @@ def get_health_message(aqi):
     else:
         return "Health warning of emergency conditions. Everyone is more likely to be affected."
 
+def get_text_color(aqi):
+    """Get contrasting text color based on AQI background"""
+    if aqi <= 2.5:  # Good/Fair (Green/Yellow) - black text
+        return "black"
+    else:  # Moderate/Poor/Very Poor (Orange/Red/Purple) - white text
+        return "white"
+
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """Engineer features to match training pipeline"""
     df['hour'] = pd.to_datetime(df['timestamp']).dt.hour
@@ -253,12 +260,14 @@ def main():
     with col4:
         st.metric("Temperature", f"{current['temperature']:.1f}°C")
     
-    # AQI Status Banner
+    # AQI Status Banner with dynamic text color
     aqi_color = get_aqi_color(current['aqi'])
+    text_color = get_text_color(current['aqi'])
+    
     st.markdown(f"""
     <div style='background-color: {aqi_color}; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;'>
-        <h2 style='color: white; margin: 0;'>{get_aqi_category(current['aqi'])}</h2>
-        <p style='color: white; margin: 10px 0 0 0;'>{get_health_message(current['aqi'])}</p>
+        <h2 style='color: {text_color}; margin: 0;'>{get_aqi_category(current['aqi'])}</h2>
+        <p style='color: {text_color}; margin: 10px 0 0 0;'>{get_health_message(current['aqi'])}</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -277,11 +286,13 @@ def main():
             for idx, (horizon, pred) in enumerate(predictions.items()):
                 with cols[idx]:
                     hours = horizon.replace('h', '')
+                    pred_text_color = get_text_color(pred['aqi'])
+                    
                     st.markdown(f"""
                     <div style='background-color: {pred['color']}; padding: 15px; border-radius: 8px; text-align: center;'>
-                        <h4 style='color: white; margin: 0;'>{hours}h Forecast</h4>
-                        <h2 style='color: white; margin: 5px 0;'>{pred['aqi']}/5</h2>
-                        <p style='color: white; margin: 0;'>{pred['category']}</p>
+                        <h4 style='color: {pred_text_color}; margin: 0;'>{hours}h Forecast</h4>
+                        <h2 style='color: {pred_text_color}; margin: 5px 0;'>{pred['aqi']}/5</h2>
+                        <p style='color: {pred_text_color}; margin: 0;'>{pred['category']}</p>
                     </div>
                     """, unsafe_allow_html=True)
         else:
